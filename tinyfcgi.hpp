@@ -156,6 +156,7 @@ public:
 
   void merge_next();
   void append(const string_ref& str);
+  void clear_padding();
 
   bool valid() const;
 
@@ -274,6 +275,7 @@ public:
   message& end_request(unsigned int app_status, unsigned char proto_status);
 
   message& append(unsigned char type, const string_ref& str);
+  message& clear_padding();
   message& end_stream(unsigned char type);
 
   message& add_param(const string_ref& name, const string_ref& value);
@@ -375,6 +377,13 @@ void header::append(const string_ref& str) {
   uint16_t s = size();
   memcpy(data() + s, str.data(), str.size());
   size(s + str.size());
+}
+
+inline
+void header::clear_padding() {
+  if (paddingLength) {
+    memset(data() + size(), 0, paddingLength);
+  }
 }
 
 inline
@@ -526,6 +535,9 @@ message& message::begin_request(unsigned int role, unsigned char flags) {
     begin_request_body* res = (begin_request_body*)h->data();
     res->role(role);
     res->flags = flags;
+    res->reserved[0] = res->reserved[1] = res->reserved[2] =
+    res->reserved[3] = res->reserved[4] = 0;
+    h->clear_padding();
   }
   return *this;
 }
@@ -537,6 +549,8 @@ message& message::end_request(unsigned int app_status, unsigned char proto_statu
     end_request_body* res = (end_request_body*)h->data();
     res->app_status(app_status);
     res->protocolStatus = proto_status;
+    res->reserved[0] = res->reserved[1] = res->reserved[2] = 0;
+    h->clear_padding();
   }
   return *this;
 }
@@ -549,6 +563,14 @@ message& message::append(unsigned char type, const string_ref& str) {
       overflow();
     } else
       h->append(str);
+  }
+  return *this;
+}
+
+inline
+message& message::clear_padding() {
+  if (good_ && cur_header_->type) {
+    cur_header_->clear_padding();
   }
   return *this;
 }
@@ -628,12 +650,14 @@ header* message::add_header(unsigned char type, bool force, size_t size) {
           return 0;
         }
       }
+      cur_header_->clear_padding();
       cur_header_ = n;
     }
     cur_header_->type = type;
     cur_header_->id(id_);
     cur_header_->version = FCGI_VERSION_1;
     cur_header_->size(size);
+    cur_header_->reserved = 0;
   }
   return cur_header_;
 }
